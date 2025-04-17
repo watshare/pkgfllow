@@ -1,76 +1,41 @@
-name: Python Package Downloader
+name: Download and Package Python Package
 
 on:
   workflow_dispatch:
     inputs:
-      package_input:
-        description: '输入格式：包名[==版本] （例如：requests==2.28.1）'
+      packageName:
+        description: 'Python package name'
         required: true
-        type: string
+        default: 'requests'
+      packageVersion:
+        description: 'Python package version'
+        required: true
+        default: '2.31.0'
 
 jobs:
-  package:
+  download-and-package:
     runs-on: windows-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python 3.12
-        uses: actions/setup-python@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Prepare environment
+      - name: Install package
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          mkdir package_files
+          python -m pip install --upgrade pip
+          pip install ${{ github.event.inputs.packageName }}==${{ github.event.inputs.packageVersion }} --target=package
 
-      - name: Parse input
-        id: parse-input
-        shell: pwsh
+      - name: Create zip archive
         run: |
-          $inputLine = "${{ github.event.inputs.package_input }}"
-          if ($inputLine -match "^[a-zA-Z0-9-_\.]+(\s*==|\s*>=|\s*<=|\s*>|\s*<)?\s*[0-9\.]*$") {
-              $validEntry = $inputLine
-          } else {
-              Write-Error "无效的输入格式！"
-              Write-Error "正确格式示例："
-              Write-Error " - requests==2.28.1"
-              Write-Error " - pandas>=1.3.0"
-              exit 1
-          }
-          $env:VALID_ENTRY = $validEntry
+          Compress-Archive -Path package/* -DestinationPath package.zip
 
-      - name: Download package
-        shell: pwsh
-        env:
-          VALID_ENTRY: ${{ steps.parse-input.outputs.valid_entry }}
-        run: |
-          Write-Output "正在下载包: $env:VALID_ENTRY"
-          pip download $env:VALID_ENTRY --dest package_files
-
-      - name: Verify download
-        run: |
-          $downloaded = Get-ChildItem -Path package_files -File
-          if (-not $downloaded) {
-              Write-Error "下载失败，请检查："
-              Write-Error "1. 包名是否正确"
-              Write-Error "2. 网络连接是否正常"
-              exit 1
-          }
-
-      - name: Create ZIP
-        shell: pwsh
-        run: |
-          Compress-Archive -Path package_files\* -DestinationPath package_files.zip -Force
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+      - name: Upload package as artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: python-packages
-          path: package_files.zip
-
-      - name: Cleanup
-        if: always()
-        run: |
-          Remove-Item -Recurse -Force package_files
+          name: ${{ github.event.inputs.packageName }}-${{ github.event.inputs.packageVersion }}-windows-amd64
+          path: package.zip
