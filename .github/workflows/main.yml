@@ -33,8 +33,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ github.event.inputs.node_version }}
-          # 禁用自动缓存，避免依赖锁定文件检查
-          cache: 'none'
+          # 移除cache参数，避免插件错误
 
       - name: 安装指定版本的npm
         run: |
@@ -45,14 +44,13 @@ jobs:
         run: |
           mkdir -p offline-packages
           mkdir -p offline-packages/npm-packages
+          mkdir -p offline-packages/npm-cache
 
       - name: 下载npm包及其依赖
         run: |
           cd offline-packages/npm-packages
-          # 使用--no-package-lock避免生成锁定文件
-          # 使用--no-save避免修改package.json
-          # 使用--cache指定缓存目录
-          npm install --no-package-lock --no-save --cache . ${{ github.event.inputs.npm_packages }}
+          # 使用自定义缓存目录，避免与系统缓存冲突
+          npm install --no-package-lock --no-save --cache ../npm-cache ${{ github.event.inputs.npm_packages }}
           cd ../..
 
       - name: 下载npm和Node.js（可选）
@@ -75,7 +73,7 @@ jobs:
           
           echo "正在安装npm包..."
           cd npm-packages
-          npm install --no-package-lock --no-save --offline --cache .
+          npm install --no-package-lock --no-save --offline --cache ../npm-cache .
           cd ..
           
           echo "安装完成！"
