@@ -1,41 +1,93 @@
-name: Download and Package Python Package
+name: NPM Offline Packager
 
 on:
   workflow_dispatch:
     inputs:
-      packageName:
-        description: 'Python package name'
+      node_version:
+        description: 'Node.js版本 (如: 18.17.1)'
         required: true
-        default: 'requests'
-      packageVersion:
-        description: 'Python package version'
+        default: '18.17.1'
+      npm_version:
+        description: 'npm版本 (如: 9.6.7)'
         required: true
-        default: '2.31.0'
+        default: '9.6.7'
+      npm_packages:
+        description: '需要安装的npm插件列表，使用空格分隔 (如: express react vue)'
+        required: true
+        default: 'express react vue'
+      include_node:
+        description: '是否包含Node.js二进制文件 (离线环境可能需要)'
+        type: boolean
+        required: true
+        default: true
 
 jobs:
-  download-and-package:
-    runs-on: windows-latest
+  build:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: 检出仓库
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: 设置Node.js环境
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.12'
+          node-version: ${{ github.event.inputs.node_version }}
+          cache: 'npm'
 
-      - name: Install package
+      - name: 安装指定版本的npm
         run: |
-          python -m pip install --upgrade pip
-          pip install ${{ github.event.inputs.packageName }}==${{ github.event.inputs.packageVersion }} --target=package
+          npm install -g npm@${{ github.event.inputs.npm_version }}
+          npm --version
 
-      - name: Create zip archive
+      - name: 创建临时目录
         run: |
-          Compress-Archive -Path package/* -DestinationPath package.zip
+          mkdir -p offline-packages
+          mkdir -p offline-packages/npm-packages
 
-      - name: Upload package as artifact
+      - name: 下载npm包及其依赖
+        run: |
+          cd offline-packages/npm-packages
+          npm install --no-package-lock --no-save --offline --cache . ${{ github.event.inputs.npm_packages }}
+          cd ../..
+
+      - name: 下载npm和Node.js（可选）
+        if: github.event.inputs.include_node == 'true'
+        run: |
+          # 下载Node.js二进制文件
+          NODE_VERSION=${{ github.event.inputs.node_version }}
+          NODE_DIST="node-v${NODE_VERSION}-linux-x64"
+          wget -q https://nodejs.org/dist/v${NODE_VERSION}/${NODE_DIST}.tar.xz -O offline-packages/${NODE_DIST}.tar.xz
+          
+          # 提取npm二进制文件
+          mkdir -p offline-packages/npm-bin
+          tar -xJf offline-packages/${NODE_DIST}.tar.xz -C offline-packages/npm-bin --strip-components=1 ${NODE_DIST}/bin/npm ${NODE_DIST}/bin/npx
+          
+          # 创建安装脚本
+          cat > offline-packages/install.sh << EOF
+          #!/bin/bash
+          echo "正在安装Node.js..."
+          tar -xJf ${NODE_DIST}.tar.xz -C /usr/local --strip-components=1
+          
+          echo "正在安装npm包..."
+          cd npm-packages
+          npm install --no-package-lock --no-save --offline --cache .
+          cd ..
+          
+          echo "安装完成！"
+          EOF
+          
+          chmod +x offline-packages/install.sh
+
+      - name: 打包离线安装包
+        run: |
+          cd offline-packages
+          tar -czvf ../npm-offline-packages.tar.gz .
+          cd ..
+
+      - name: 上传离线安装包
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.inputs.packageName }}-${{ github.event.inputs.packageVersion }}-windows-amd64
-          path: package.zip
+          name: npm-offline-packages
+          path: npm-offline-packages.tar.gz
+          retention-days: 7    
