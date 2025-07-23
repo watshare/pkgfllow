@@ -14,7 +14,7 @@ on:
       end_date:
         description: '结束日期 (YYYY-MM-DD)'
         required: true
-        default: '2023-12-31'
+        default: '2025-12-31'
       market:
         description: '股票市场'
         required: true
@@ -77,7 +77,7 @@ jobs:
                   sys.exit(1)
 
               # 保存数据到CSV
-              csv_path = os.path.join('output', f'{stock_code.replace(".", "_")}_{start_date}_{end_date}.csv')
+              csv_path = os.path.join('output', f'{stock_code}_{start_date}_{end_date}.csv')
               data.to_csv(csv_path)
               print(f'数据已成功保存到 {csv_path}')
           except Exception as e:
