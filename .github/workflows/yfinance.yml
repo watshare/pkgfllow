@@ -1,0 +1,93 @@
+name: Download Stock Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      stock_code:
+        description: '股票代码 (例如: AAPL, 0001.HK, 600000.SS)'
+        required: true
+        default: 'AAPL'
+      start_date:
+        description: '开始日期 (YYYY-MM-DD)'
+        required: true
+        default: '2023-01-01'
+      end_date:
+        description: '结束日期 (YYYY-MM-DD)'
+        required: true
+        default: '2023-12-31'
+      market:
+        description: '股票市场'
+        required: true
+        default: 'US'
+        type: choice
+        options:
+          - US
+          - HK
+          - CN
+
+jobs:
+  download-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 安装Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance pandas
+
+      - name: 创建输出目录
+        run: mkdir -p output
+
+      - name: 下载股票数据
+        run: |
+          python -c "
+          import yfinance as yf
+          import pandas as pd
+          import sys
+          import os
+
+          stock_code = '${{ github.event.inputs.stock_code }}'
+          start_date = '${{ github.event.inputs.start_date }}'
+          end_date = '${{ github.event.inputs.end_date }}'
+          market = '${{ github.event.inputs.market }}'
+
+          # 处理不同市场的股票代码
+          if market == 'HK':
+              if not stock_code.endswith('.HK'):
+                  stock_code += '.HK'
+          elif market == 'CN':
+              if not stock_code.endswith('.SS') and not stock_code.endswith('.SZ'):
+                  if stock_code.startswith(('60', '688')):
+                      stock_code += '.SS'
+                  else:
+                      stock_code += '.SZ'
+
+          try:
+              # 下载股票数据
+              stock = yf.Ticker(stock_code)
+              data = stock.history(start=start_date, end=end_date)
+
+              if data.empty:
+                  print(f'错误: 无法获取 {stock_code} 的数据。请检查股票代码和日期范围是否正确。')
+                  sys.exit(1)
+
+              # 保存数据到CSV
+              csv_path = os.path.join('output', f'{stock_code.replace(".", "_")}_{start_date}_{end_date}.csv')
+              data.to_csv(csv_path)
+              print(f'数据已成功保存到 {csv_path}')
+          except Exception as e:
+              print(f'发生错误: {e}')
+              sys.exit(1)
+          "
+
+      - name: 上传CSV文件
+        uses: actions/upload-artifact@v3
+        with:
+          name: stock-data
+          path: output/
+          retention-days: 7    
